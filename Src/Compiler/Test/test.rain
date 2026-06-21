@@ -1,0 +1,6 @@
+void Add() {
+	var p = 1;
+	var p3 = 2.3;
+	//return p;
+}
+void Main() {}
