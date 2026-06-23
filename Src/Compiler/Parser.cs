@@ -14,10 +14,17 @@ internal sealed class Parser
 
     public AstRootNode Parse()
     {
-        var root = new AstRootNode();
+        var root = new AstRootNode() { FirstToken = Tokens.First() };
         while (!Check(Tag.EOF))
         {
-            root.TopLevelDecls.Add(ParseToplevelDecl());
+            try
+            {
+                root.TopLevelDecls.Add(ParseToplevelDecl());
+            }
+            catch (DiagnosticsException e)
+            {
+                DiagnosticsPrinter.PrintDiagnostic(e.Message, e.Token);
+            }
         }
         return root;
     }
@@ -27,7 +34,8 @@ internal sealed class Parser
         {
             return ParseProcedureDef();
         }
-        throw new Exception("Expected Top Level Declaration here");
+        var cur = Tokens[_index];
+        throw new DiagnosticsException("Expected top level declaration here", cur);
     }
 
     private IAstNode ParseProcedureDef()
@@ -39,24 +47,25 @@ internal sealed class Parser
         Expect(Tag.LeftBracket, "Expected left bracket here");
         Expect(Tag.RightBracket, "Expected closing bracket here");
 
-        //parse function body here:
         var fnProto = new ProcDeclAstNode()
         {
             Name = ident,
             returnType = null,
+            FirstToken = proc_return_type_token
         };
         var body = ParseBlock();
         return new ProcDefAstNode()
         {
-            FnProto = fnProto,
-            Body = body
+            Declaration = fnProto,
+            Body = body,
+            FirstToken = proc_return_type_token
         };
     }
 
     private IAstNode? ParseBlock()
     {
-        Expect(Tag.LeftBrace, "Expected '{' here");
-        BlockAstNode node = new();
+        var lb = Expect(Tag.LeftBrace, "Expected '{' here");
+        BlockAstNode node = new() { FirstToken = lb };
         while (true)
         {
             if (Match(Tag.RightBrace))
@@ -69,7 +78,6 @@ internal sealed class Parser
             }
 
         }
-        throw new Exception("Invalid Token");
     }
 
     private IAstNode ParseStatement()
@@ -78,9 +86,10 @@ internal sealed class Parser
         {
             var nameToken = Expect(Tag.Identifier, "Expected an identifier here");
             var name = Source[nameToken.Start..nameToken.End];
-            AssignmentStatementAstNode assignmentNode = new() { Name = name };
+            VariableDeclStatementAstNode assignmentNode = new() { Name = name, FirstToken = nameToken };
             if (Match(Tag.Semicolon)) return assignmentNode;
             Expect(Tag.Equal, "Expected an '=' here");
+            var curr = Tokens[_index];
             if (Check(Tag.IntegerLiteral) ||
                 Check(Tag.FloatLiteral) ||
                 Check(Tag.Identifier))
@@ -91,12 +100,12 @@ internal sealed class Parser
             }
             else
             {
-                throw new Exception("Expected number assignment here");
+                throw new DiagnosticsException("Expected number assignment here", curr);
             }
         }
         else
         {
-            throw new Exception("Expected valid statement here");
+            throw new DiagnosticsException("Expected valid statement here", Tokens[_index]);
         }
     }
 
@@ -107,15 +116,14 @@ internal sealed class Parser
         {
             var numToken = Tokens[_index];
             var num = Source[numToken.Start..numToken.End];
-            Console.WriteLine(num);
-            ExpressionAstNode node = new() { Number = num };
+            ExpressionAstNode node = new() { Number = num, FirstToken = numToken };
             Advance();
             Expect(Tag.Semicolon, "Expected a semi colon here");
             return node;
         }
         else
         {
-            throw new Exception("Expected number assignment here");
+            throw new DiagnosticsException("Expected number assignment here", Tokens[_index]);
         }
     }
 
@@ -149,8 +157,11 @@ internal sealed class Parser
     Token Expect(Tag tag, string msg)
     {
         if (!Check(tag))
-            throw new Exception(msg);
-
+        {
+            var curr = Tokens[_index];
+            throw new DiagnosticsException(msg, curr);
+        }
         return Advance();
     }
 }
+

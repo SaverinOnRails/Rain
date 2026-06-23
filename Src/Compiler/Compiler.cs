@@ -13,9 +13,10 @@ internal sealed class Compiler
         //parse
         var parser = new Parser(file, tokens);
         var astRoot = parser.Parse();
-        astRoot.Print();
+        // astRoot.Print();
 
         //codegen
         var codegen = new LLVMCodegen(astRoot, file);
+        codegen.Gencode();
     }
 }

@@ -12,11 +12,20 @@ internal sealed class Token
     public int Start { get; }
     public int End { get; }
 
-    public Token(Tag tag, int start, int end)
+    public int StartLine { get; }
+    public int StartColumn { get; }
+    public int EndLine { get; }
+    public int EndColumn { get; }
+
+    public Token(Tag tag, int start, int end, int startLine, int startCol, int endLine, int endCol)
     {
         Tag = tag;
         Start = start;
         End = end;
+        StartLine = startLine;
+        StartColumn = startCol;
+        EndLine = endLine;
+        EndColumn = endCol;
     }
 
     public static Tag KeywordOrIdentifier(string buf)

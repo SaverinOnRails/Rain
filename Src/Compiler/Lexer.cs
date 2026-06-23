@@ -5,6 +5,12 @@ internal sealed class Lexer
     internal required string Source { get; set; }
     private int _index = 0;
     private List<Token> Tokens { get; } = new();
+    private int Line = 1;
+    private int Column = 0;
+
+    //reset every iteration of the tokenizer
+    private int StartLine = 0;
+    private int StartColumn = 0;
     public List<Token> Tokenize()
     {
         while (CheckBounds)
@@ -12,8 +18,9 @@ internal sealed class Lexer
             SkipCommentsAndWhiteSpace();
             if (_index >= Source.Length) break;
             var start = _index;
-            var el = Source[_index];
-            _index++;
+            StartLine = Line;
+            StartColumn = Column;
+            var el = Advance();
             switch (el)
             {
                 case >= 'a' and <= 'z':
@@ -25,39 +32,47 @@ internal sealed class Lexer
                     Number(start);
                     break;
                 case '{':
-                    Tokens.Add(new(Tag.LeftBrace, start, _index));
+                    Add(Tag.LeftBrace, start);
                     break;
                 case '}':
-                    Tokens.Add(new(Tag.RightBrace, start, _index));
+                    Add(Tag.RightBrace, start);
                     break;
                 case '(':
-                    Tokens.Add(new(Tag.LeftBracket, start, _index));
+                    Add(Tag.LeftBracket, start);
                     break;
                 case ')':
-                    Tokens.Add(new(Tag.RightBracket, start, _index));
+                    Add(Tag.RightBracket, start);
                     break;
                 case '=':
-                    Tokens.Add(new(Tag.Equal, start, _index));
+                    Add(Tag.Equal, start);
                     break;
                 case '+':
-                    Tokens.Add(new(Tag.Plus, start, _index));
+                    Add(Tag.Plus, start);
                     break;
                 case ';':
-                    Tokens.Add(new(Tag.Semicolon, start, _index));
+                    Add(Tag.Semicolon, start);
                     break;
                 default:
-                    throw new Exception($"Invalid token {el}");
+                    DiagnosticsPrinter.PrintDiagnostic($"Invalid token {el} at {Line},{Column}");
+                    break;
             }
         }
-        Tokens.Add(new(Tag.EOF, Source.Length, Source.Length));
+
+        StartLine = Line;
+        StartColumn = Column;
+        Add(Tag.EOF, Source.Length);
         return Tokens;
     }
-
+    private void Add(Tag tag, int start)
+    {
+        Token token = new(tag, start: start, end: _index, startLine: StartLine, startCol: StartColumn, endLine: Line, endCol: Column);
+        Tokens.Add(token);
+    }
     private void Number(int start)
     {
         if (Source[start] == '0' && CheckBounds && (Source[_index] == 'x' || Source[_index] == 'X'))
         {
-            _index++;
+            Advance();
             var digits = 0;
             while (CheckBounds)
             {
@@ -65,18 +80,18 @@ internal sealed class Lexer
                 if (Uri.IsHexDigit(c))
                 {
                     digits += 1;
-                    _index++;
+                    Advance();
                 }
-                else if (c == '_') _index++;
+                else if (c == '_') Advance();
                 else break;
             }
-            if (digits == 0) throw new Exception("Invalid Hex Number");
-            Tokens.Add(new(Tag.IntegerLiteral, start, _index));
+            if (digits == 0) DiagnosticsPrinter.PrintDiagnostic($"Invalid Hex number at ({Line},{Column})");
+            Add(Tag.IntegerLiteral, start);
             return;
         }
         if (Source[start] == '0' && CheckBounds && (Source[_index] == 'b' || Source[_index] == 'B'))
         {
-            _index++;
+            Advance();
             var digits = 0;
             while (CheckBounds)
             {
@@ -84,55 +99,70 @@ internal sealed class Lexer
                 if (c == '0' || c == '1')
                 {
                     digits += 1;
-                    _index++;
+                    Advance();
                 }
-                else if (c == '_') _index++;
-                else if (char.IsAsciiLetterOrDigit(c)) throw new Exception("Invalid binary literal");
+                else if (c == '_') Advance();
+                else if (char.IsAsciiLetterOrDigit(c)) DiagnosticsPrinter.PrintDiagnostic($"Invalid binary literal at ({Line},{Column})");
                 else break;
             }
-            if (digits == 0) throw new Exception("Invalid binary literal");
-            Tokens.Add(new(Tag.IntegerLiteral, start, _index));
+            if (digits == 0) DiagnosticsPrinter.PrintDiagnostic($"Invalid binary literal at ({Line},{Column})");
+            Add(Tag.IntegerLiteral, start);
             return;
         }
         var is_float = false;
-        while (CheckBounds && (char.IsAsciiDigit(Source[_index]) || Source[_index] == '_')) _index++;
+        while (CheckBounds && (char.IsAsciiDigit(Source[_index]) || Source[_index] == '_')) Advance();
         if (CheckBounds && Source[_index] == '.' && (_index + 1 < Source.Length && Source[_index + 1] != '.'))
         {
             is_float = true;
-            _index++;
-            while (CheckBounds && (char.IsAsciiDigit(Source[_index]) || Source[_index] == '_')) _index++;
+            Advance();
+            while (CheckBounds && (char.IsAsciiDigit(Source[_index]) || Source[_index] == '_')) Advance();
         }
         if (CheckBounds && (Source[_index] == 'e' || Source[_index] == 'E'))
         {
             is_float = true;
-            _index++;
-            if (CheckBounds && (Source[_index] == '+' || Source[_index] == '-')) _index++;
+            Advance();
+            if (CheckBounds && (Source[_index] == '+' || Source[_index] == '-')) Advance();
             var exp_digits = 0;
             while (CheckBounds && (char.IsAsciiDigit(Source[_index]) || Source[_index] == '_'))
             {
                 if (char.IsAsciiDigit(Source[_index])) exp_digits++;
-                _index++;
+                Advance();
             }
-            if (exp_digits == 0) throw new Exception("invalid float exponent");
+            if (exp_digits == 0) DiagnosticsPrinter.PrintDiagnostic($"Invalid float exponent ({Line},{Column})");
         }
         if (CheckBounds && Source[_index] == 'f')
         {
-            _index++;
+            Advance();
             is_float = true;
         }
-        else if (CheckBounds && char.IsAsciiLetter(Source[_index])) throw new Exception("invalid numeric literal suffix");
-        Tokens.Add(new(is_float ? Tag.FloatLiteral : Tag.IntegerLiteral, start, _index));
+        else if (CheckBounds && char.IsAsciiLetter(Source[_index])) DiagnosticsPrinter.PrintDiagnostic($"Invalid numeral suffix ({Line},{Column})");
+        Add(is_float ? Tag.FloatLiteral : Tag.IntegerLiteral, start);
     }
 
     private bool CheckBounds => _index < Source.Length;
 
+    private char Advance()
+    {
+        char c = Source[_index++];
+
+        if (c == '\n')
+        {
+            Line++;
+            Column = 1;
+        }
+        else
+        {
+            Column++;
+        }
+        return c;
+    }
     private void Identifier(int start)
     {
         while (CheckBounds &&
                 (Source[_index] == '_'
                 || char.IsAsciiLetterOrDigit(Source[_index])
-             )) _index++;
-        Tokens.Add(new(Token.KeywordOrIdentifier(Source[start.._index]), start, _index));
+             )) Advance();
+        Add(Token.KeywordOrIdentifier(Source[start.._index]), start);
     }
 
     private void SkipCommentsAndWhiteSpace()
@@ -140,14 +170,18 @@ internal sealed class Lexer
         while (CheckBounds)
         {
             var el = Source[_index];
-            if (char.IsWhiteSpace(el)) _index += 1;
+            if (char.IsWhiteSpace(el))
+            {
+                Advance();
+            }
             else if (el == '/')
             {
                 if (_index + 1 >= Source.Length) return;
                 if (Source[_index + 1] == '/')
                 {
-                    _index += 2;
-                    while (CheckBounds && Source[_index] != '\n') _index += 1;
+                    Advance();
+                    Advance();
+                    while (CheckBounds && Source[_index] != '\n') Advance();
                 }
                 else return;
             }
